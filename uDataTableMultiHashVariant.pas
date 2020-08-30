@@ -7,7 +7,7 @@
     - memory management for pchars, freemem on Delete and other
   }
 
-unit uDataTableStringDebug;
+unit uDataTableMultiHashVariant;
 
 interface
 
@@ -21,19 +21,16 @@ type
   THashMode = (hmTesting,hmNormal);
   TDataMode = (dmDeleteData,dmIterateData,dmTestingData);
 
-  TDataTableRow = record
-    col1: integer;
-    col2: integer;
-  end;
+  TRowData = array of Variant;
 
   TOnData = procedure(const Key: AnsiString; var Data: Pointer; DataMode: TDataMode) of object;
-  TOnRowData = procedure(const Key: AnsiString; var RowData: TDataTableRow; DataMode: TDataMode) of object;
+  TOnRowData = procedure(const Key: AnsiString; var RowData: TRowData; DataMode: TDataMode) of object;
 
   PHashTableNode = ^TDataTableNode;
   TDataTableNode = packed record
     Key: Ansistring; // should be shortstring ?
     Data: Pointer;
-    RowData: TDataTableRow;
+    RowData: TRowData;
     PriorNode: PHashTableNode;
     NextNode: PHashTableNode;
   end;
@@ -51,7 +48,7 @@ type
     procedure SetHashMode(AHashMode: THashMode);
     function GetNode(Key: AnsiString; var Index: THashIndex; var err: integer): PHashTableNode;
     procedure DeleteNode(var Node: PHashTableNode);
-    function GetDataTableRow(Index: integer): TDataTableRow;
+    function GetDataTableRow(Index: integer): TRowData;
   public
     constructor Create(AHashTableLength: LongWord = 383);
     destructor Destroy; override;
@@ -60,8 +57,7 @@ type
 
     procedure Clear;
     procedure IterateData;
-    function AddData(Key: AnsiString; Data: Pointer): integer;    // wide table row addition
-    function AddRow(Key: AnsiString; data1: integer; data2: integer): integer;
+    function AddRow(Key: AnsiString; ARowData: array Of TVarRec): integer;
 
     function GetData(Key: AnsiString; var Data: Pointer): Boolean;
     function DeleteData(Key: AnsiString): Boolean;
@@ -71,12 +67,13 @@ type
     property HashMode: THashMode read FHashMode write SetHashMode;
     property OnData: TOnData read FOnData write FOnData;
     property OnRowData: TOnRowData read FOnRowData write FOnRowData;
-    property Items[Index: Integer]: TDataTableRow read GetDataTableRow;
+    property Items[Index: Integer]: TRowData read GetDataTableRow;
   end;
 
 const
   ERR_HASH_LENGTH_TOO_SMALL = 1;
   ERR_HASH_DUPLICATE = 2;
+  ERR_INVALID_TYPE_ADDED = 3;
 
 function SimpleHash(const Key: AnsiString): THashIndex;
 function SimpleXORHash(const Key: AnsiString): THashIndex;
@@ -242,7 +239,7 @@ begin
   Node := nil;
 end;
 
-function GetDataTableRow(idx: integer): TDataTableRow;
+function GetDataTableRow(idx: integer): TRowData;
 begin
 
 end;
@@ -295,63 +292,138 @@ begin
   end;
 end;
 
-// returns value greater than zero if there is an error (1: length of hashtable too small)
-function TDataTable.AddData(Key: AnsiString; Data: Pointer): integer;
-var
-  Index: THashIndex;
-  Node: PHashTableNode;
-  AErr: integer;
-begin
-  Node := GetNode(Key, Index, AErr);
-
-  if AErr > 0 then
-  begin
-    result := AErr;
-    exit;
-  end;
-
-  if(FHashMode = hmTesting)then
-  begin
-    Inc(FNumOfItems);
-    FHashTable[Index] := Pointer(Integer(FHashTable[Index])+1);
-    Exit;
-  end;
-
-  if(Node = nil)then
-  //  not found, so create a new Node and add to the beginning of the
-  //  linked list at the hash table index
-  begin
-    Inc(FNumOfItems);
-
-    New(Node);
-
-    Node^.Key := Key;
-    Node^.PriorNode := nil;
-    Node^.NextNode := FHashTable[Index];
-    Node^.Data := Data;
-    FHashTable[Index] := Node;
-
-    if(Node^.NextNode <> nil)then
-      Node^.NextNode^.PriorNode := Node;
-  end
-  else
-    Node^.Data := Data;
-end;
-
 // returns error if hashlist too small (1) or duplicate (2)
-function TDataTable.AddRow(Key: AnsiString; data1: integer; data2: integer): integer;
+function TDataTable.AddRow(Key: AnsiString; ARowData: array of TVarRec): integer;
 var
+//  rd: TRowData;
   Index: THashIndex;
   Node: PHashTableNode;
-  i, j: integer;
+  k: integer;
   AErr: integer;
+  VariantData: TRowData;
+
+  procedure AddData;
+  var
+    j: integer;
+  begin
+    SetLength(Node^.RowData, Length(ARowData));
+    for j := 0 to length(ARowData)-1 do begin
+      Node^.RowData[j] := VariantData[j];
+    end;
+  end;
+
 begin
+  // rd := CopyRowData(ARowData);
   Node := GetNode(Key, Index, AErr);
 
   if AErr > 0 then begin
     result := AErr;
     exit;
   end;
+
+  SetLength(VariantData, Length(ARowData));
+  for k := 0 to length(ARowData)-1 do begin
+    case ARowData[k].VType of
+      vtInteger:
+      begin
+        VariantData[k] := ARowData[k].VInteger;
+      end;
+
+      vtBoolean:
+      begin
+        VariantData[k] := char(ARowData[k].VBoolean);
+      end;
+
+      vtChar:
+      begin
+        VariantData[k] := char(ARowData[k].VChar);
+      end;
+
+      vtExtended:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtString:
+      begin
+        VariantData[k] := string(ARowData[k].vString);
+      end;
+
+      vtPointer:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtPChar:
+      begin
+        Node^.RowData[k] := string(ARowData[k].vPChar);
+      end;
+
+      vtObject:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtClass:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtWideChar:
+      begin
+        VariantData[k] := char(ARowData[k].vWideChar);
+      end;
+
+      vtPWideChar:
+      begin
+        VariantData[k] := string(ARowData[k].vPWideChar);
+      end;
+
+      vtAnsistring:
+      begin
+        VariantData[k] := string(ARowData[k].vAnsistring);
+      end;
+
+      vtCurrency:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtVariant:
+      begin
+        VariantData[k] := string(ARowData[k].vVariant);
+      end;
+
+      vtInterface:
+      begin
+        result := ERR_INVALID_TYPE_ADDED;
+        exit;
+      end;
+
+      vtWideString:
+      begin
+        VariantData[k] := string(ARowData[k].vWideString);
+      end;
+
+      vtInt64:
+      begin
+        VariantData[k] := integer(ARowData[k].VInt64);
+      end;
+
+      vtUnicodeString:
+      begin
+        VariantData[k] := string(ARowData[k].vUnicodeString);
+      end;
+
+   end;
+
+  end;
+
 
   if (FHashMode = hmTesting) then
   begin
@@ -371,10 +443,8 @@ begin
     Node^.Key := Key;
     Node^.PriorNode := nil;
     Node^.NextNode := FHashTable[Index];
-    // Node^.RowData := Data; // instead use code below
-    //SetLength(Node^.RowData, 2);
-    Node^.RowData.col1 := data1;
-    Node^.RowData.col2 := data2;
+
+    AddData;
 
     FHashTable[Index] := Node;
 
@@ -382,12 +452,7 @@ begin
       Node^.NextNode^.PriorNode := Node;
   end
   else begin
-    // Node^.RowData := Data; // instead use code below
-    //SetLength(Node^.RowData, 2);
-    // Node^.RowData[i] := data[i];
-    Node^.RowData.col1 := data1;
-    Node^.RowData.col2 := data2;
-
+    AddData;
   end;
 end;
 
@@ -465,7 +530,7 @@ begin
   end;
 end;
 
-function TDataTable.GetDataTableRow(Index: integer): TDataTableRow;
+function TDataTable.GetDataTableRow(Index: integer): TRowData;
 var
   i, found: Integer;
   Node: PHashTableNode;

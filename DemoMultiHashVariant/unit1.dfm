@@ -39,7 +39,6 @@ object frmMain: TfrmMain
     Margins.Bottom = 4
     Caption = 'Add Items'
     TabOrder = 1
-    OnClick = bAddItemsClick
   end
   object bAccessData: TButton
     Left = 544
@@ -52,7 +51,6 @@ object frmMain: TfrmMain
     Margins.Bottom = 4
     Caption = 'Access Data'
     TabOrder = 2
-    OnClick = bAccessDataClick
   end
   object Button1: TButton
     Left = 544
@@ -65,7 +63,6 @@ object frmMain: TfrmMain
     Margins.Bottom = 4
     Caption = 'Button1'
     TabOrder = 3
-    OnClick = Button1Click
   end
   object GroupBox1: TGroupBox
     Left = 15
@@ -167,7 +164,6 @@ object frmMain: TfrmMain
       Height = 25
       Caption = 'bShowPointerData'
       TabOrder = 5
-      OnClick = bShowPointerDataClick
     end
   end
 end
